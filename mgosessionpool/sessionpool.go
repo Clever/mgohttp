@@ -12,75 +12,6 @@ import (
 	mgo "gopkg.in/mgo.v2"
 )
 
-// Session TODO
-type Session interface {
-	CopyWithCtx(ctx context.Context) (Session, error)
-	Close()
-	SetSocketTimeout(time.Duration)
-	DB(name string) *mgo.Database
-	Ping() error
-}
-
-// SessionPool is a session with limits on how many concurrent copies can exist.
-type SessionPool struct {
-	session  *mgo.Session
-	sem      *semaphore.Weighted
-	copied   bool
-	released bool
-}
-
-// NewSessionPool creates a new session pool.
-func NewSessionPool(session *mgo.Session, limit int64) *SessionPool {
-	return &SessionPool{
-		session: session,
-		sem:     semaphore.NewWeighted(limit),
-		copied:  false,
-	}
-}
-
-// CopyWithCtx creates a new session copy.
-func (s *SessionPool) CopyWithCtx(ctx context.Context) (Session, error) {
-	// the underlying mgo session can only be copied once. This protects against
-	// deadlock in the case where a function has a nested call to another session copy'er.
-	// it assumes one session copy per request is sufficient
-	if s.copied {
-		return s, nil
-	}
-	if err := s.sem.Acquire(ctx, 1); err != nil {
-		return nil, err
-	}
-	return &SessionPool{
-		session: s.session.Copy(),
-		sem:     s.sem,
-		copied:  true,
-	}, nil
-}
-
-// DB returns a mongo DB.
-func (s *SessionPool) DB(name string) *mgo.Database {
-	return s.session.DB(name)
-}
-
-// SetSocketTimeout sets the timeout for queries from this session
-func (s *SessionPool) SetSocketTimeout(d time.Duration) {
-	s.session.SetSocketTimeout(d)
-}
-
-// Ping mongo.
-func (s *SessionPool) Ping() error {
-	return s.session.Ping()
-}
-
-// Close the session.
-func (s *SessionPool) Close() {
-	if s.copied && !s.released {
-		// lock was acquired, release it
-		s.released = true
-		s.sem.Release(1)
-	}
-	s.session.Close()
-}
-
 type mgoSessionKeyType struct {
 	database string
 }
@@ -94,39 +25,48 @@ func getMgoSessionKey(db string) mgoSessionKeyType {
 // MongoSessionInjectorConfig dictates how we inject mongo sessions into the context
 // of the HTTP request.
 type MongoSessionInjectorConfig struct {
-	SessionPool *SessionPool
-	Database    string
-	Timeout     time.Duration
-	Handler     http.Handler
+	SessionLimit int64
+	Sess         *mgo.Session
+	Database     string
+	Timeout      time.Duration
+	Handler      http.Handler
 }
 
 // MongoSessionInjector is an HTTP middleware that injects a new copied mongo session
 // into the Context of the request.
 // This middleware handles timing out inflight Mongo requests.
 type MongoSessionInjector struct {
-	sessionPool *SessionPool
-	database    string
-	timeout     time.Duration
-	handler     http.Handler
+	parentSession *mgo.Session
+	sessionLimit  int64
+	database      string
+	timeout       time.Duration
+	handler       http.Handler
+	sem           *semaphore.Weighted
 }
 
 // NewMongoSessionInjector TODO
 func NewMongoSessionInjector(cfg MongoSessionInjectorConfig) http.Handler {
 	return &MongoSessionInjector{
-		database:    cfg.Database,
-		sessionPool: cfg.SessionPool,
-		timeout:     cfg.Timeout,
-		handler:     cfg.Handler,
+		database:      cfg.Database,
+		parentSession: cfg.Sess,
+		timeout:       cfg.Timeout,
+		handler:       cfg.Handler,
+		sem:           semaphore.NewWeighted(cfg.SessionLimit),
 	}
 }
 
 func (c *MongoSessionInjector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// create a session copy
-	newSession, err := c.sessionPool.CopyWithCtx(r.Context())
-	if err != nil {
+	ctx := r.Context()
+
+	if err := c.sem.Acquire(ctx, 1); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(fmt.Sprintf("mongo pool exhausted at %d conns", c.sessionLimit)))
 		return
 	}
+	defer c.sem.Release(1)
+
+	// create a session copy
+	newSession := c.parentSession.Copy()
 
 	// SetSocketTimeout guarantees that no individual query to mongo can take longer than
 	// the RequestTimeoutDuration value.
@@ -151,13 +91,16 @@ func (c *MongoSessionInjector) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	}
 }
 
+// LimitedSession is the methods from an *mgo.Session that we give the consumer access to
 type LimitedSession interface {
 	DB(string) *mgo.Database
+	Ping() error
 }
 
+// SessionFromContext retrieves a *mgo.Session from the request context.
 func SessionFromContext(ctx context.Context, database string) LimitedSession {
 	sessionBlob := ctx.Value(getMgoSessionKey(database))
-	if sess, ok := sessionBlob.(*SessionPool); ok {
+	if sess, ok := sessionBlob.(*mgo.Session); ok {
 		return sess
 	}
 	panic(fmt.Sprintf("SessionFromContext must receive a valid database name: %s not found", database))
