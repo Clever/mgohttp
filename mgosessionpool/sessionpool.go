@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/Clever/app-service/config"
-	"github.com/Clever/kayvee-go/logger"
 	"golang.org/x/sync/semaphore"
+	"gopkg.in/Clever/kayvee-go.v6/logger"
 	mgo "gopkg.in/mgo.v2"
 )
 
