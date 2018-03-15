@@ -13,9 +13,10 @@ import (
 )
 
 const (
-	testMongoURL   = "127.0.0.1:27017"
-	testDBName     = "mgosessionpool-test"
-	handlerTimeout = 50 * time.Millisecond
+	testMongoURL      = "127.0.0.1:27017"
+	testDBName        = "mgosessionpool-test"
+	handlerTimeout    = 50 * time.Millisecond
+	testingStatusCode = http.StatusTeapot
 )
 
 func TestMongoSessionInjector(t *testing.T) {
@@ -46,6 +47,7 @@ func TestMongoSessionInjector(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 			},
 			assertions: func(t *testing.T, resp *http.Response) {
+				// we expect to finish both of our queries just fine
 				assert.Equal(t, http.StatusOK, resp.StatusCode)
 			},
 		},
@@ -64,7 +66,8 @@ func TestMongoSessionInjector(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 			},
 			assertions: func(t *testing.T, resp *http.Response) {
-				assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+				// we expect our query to time out and receive the error from the session handler
+				assert.Equal(t, testingStatusCode, resp.StatusCode)
 			},
 		},
 		{
@@ -84,6 +87,47 @@ func TestMongoSessionInjector(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 			},
 			assertions: func(t *testing.T, resp *http.Response) {
+				// we expect our queries to time out and receive the error from the session handler
+				assert.Equal(t, testingStatusCode, resp.StatusCode)
+			},
+		},
+		{
+			desc: "handler wrapped in http.TimeoutHandler",
+			handler: http.TimeoutHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				sess := SessionFromContext(r.Context(), testDBName)
+				// try to sleep for 10sec
+				err := sess.DB("test").Run(bson.M{"eval": "sleep(10000)"}, nil)
+				if err != nil {
+					// NOTE: using 500 to differentiate from the injector's 503's
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				// this should not be reached
+				w.WriteHeader(http.StatusOK)
+			}), handlerTimeout, "timed out").ServeHTTP,
+			assertions: func(t *testing.T, resp *http.Response) {
+				// we expect our query to timeout, this just checks that we're fully compatible
+				// with http.TimeoutHandler
+				assert.Equal(t, testingStatusCode, resp.StatusCode)
+			},
+		},
+		{
+			desc: "a stricter http.TimeoutHandler will supercede us",
+			handler: http.TimeoutHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				sess := SessionFromContext(r.Context(), testDBName)
+				// try to sleep for 10sec
+				err := sess.DB("test").Run(bson.M{"eval": "sleep(10000)"}, nil)
+				if err != nil {
+					// NOTE: using 500 to differentiate from the injector's 503's
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				// this should not be reached
+				w.WriteHeader(http.StatusOK)
+			}), handlerTimeout/2, "timed out").ServeHTTP,
+			assertions: func(t *testing.T, resp *http.Response) {
+				// after giving http.TimeoutHandler half the time window that we time out
+				// mgo session, we expect the TimeoutHandler to return early
 				assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 			},
 		},
@@ -97,6 +141,9 @@ func TestMongoSessionInjector(t *testing.T) {
 				Timeout:  handlerTimeout,
 				Handler:  spec.handler,
 			})
+			// Override the error status code for testing. This allows us to differentiate
+			// between our error status code and the 503 from http.TimeoutHandler.
+			injector.(*MongoSessionInjector).errorCode = testingStatusCode
 
 			testServer := httptest.NewServer(injector)
 			defer testServer.Close()

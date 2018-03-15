@@ -42,6 +42,7 @@ type MongoSessionInjector struct {
 	database      string
 	timeout       time.Duration
 	handler       http.Handler
+	errorCode     int // this is defaulted to 503, only the tests can override
 }
 
 // NewMongoSessionInjector returns a new MongoSessionInjector which implements http.HandlerFunc
@@ -51,6 +52,7 @@ func NewMongoSessionInjector(cfg MongoSessionInjectorConfig) http.Handler {
 		parentSession: cfg.Sess,
 		timeout:       cfg.Timeout,
 		handler:       cfg.Handler,
+		errorCode:     http.StatusServiceUnavailable,
 	}
 }
 
@@ -73,7 +75,7 @@ func (c *MongoSessionInjector) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		h: make(http.Header),
 	}
 
-	// getSession is injected into the Context, repeatedly calls by the same request will return
+	// getSession is injected into the Context, repeated calls by the same request will return
 	// the same session.
 	var getSession sessionGetter = func() *mgo.Session {
 		// we've already created a session for this request, shortcircuit and return that session.
@@ -115,7 +117,7 @@ func (c *MongoSessionInjector) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		tw.copyToResponseWriter(w)
 	case <-sessionTimer.C:
 		tw.setTimedOut()
-		w.WriteHeader(http.StatusServiceUnavailable)
+		w.WriteHeader(c.errorCode)
 		logger.FromContext(r.Context()).Error("mongo-session-killed")
 	}
 
