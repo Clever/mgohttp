@@ -1,13 +1,15 @@
-.PHONY: all test build run
+include golang.mk
+.DEFAULT_GOAL := test # override default goal set in library makefile
+
+.PHONY: test $(PKGS)
 SHELL := /bin/bash
+PKGS = $(shell go list ./...)
+$(eval $(call golang-version-check,1.9))
 
-all: test build
+test: $(PKGS)
 
-test:
-	echo "TODO test app"
+$(PKGS): golang-test-all-strict-deps
+	$(call golang-test-all-strict,$@)
 
-build:
-	echo "TODO build app"
-
-run: build
-	echo "TODO run app"
+install_deps: golang-dep-vendor-deps
+	$(call golang-dep-vendor)
