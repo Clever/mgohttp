@@ -1,4 +1,4 @@
-package mgosessionpool
+package mgohttp
 
 import (
 	"context"
@@ -21,9 +21,9 @@ func getMgoSessionKey(db string) mgoSessionKeyType {
 	return mgoSessionKeyType{database: db}
 }
 
-// MongoSessionInjectorConfig dictates how we inject mongo sessions into the context
+// SessionHandlerConfig dictates how we inject mongo sessions into the context
 // of the HTTP request.
-type MongoSessionInjectorConfig struct {
+type SessionHandlerConfig struct {
 	Sess     *mgo.Session
 	Database string
 	Timeout  time.Duration
@@ -34,10 +34,10 @@ type mgoSessionCopier interface {
 	Copy() *mgo.Session
 }
 
-// MongoSessionInjector is an HTTP middleware that injects a new copied mongo session
+// SessionHandler is an HTTP middleware that injects a new copied mongo session
 // into the Context of the request.
 // This middleware handles timing out inflight Mongo requests.
-type MongoSessionInjector struct {
+type SessionHandler struct {
 	parentSession mgoSessionCopier
 	database      string
 	timeout       time.Duration
@@ -45,9 +45,9 @@ type MongoSessionInjector struct {
 	errorCode     int // this is defaulted to 503, only the tests can override
 }
 
-// NewMongoSessionInjector returns a new MongoSessionInjector which implements http.HandlerFunc
-func NewMongoSessionInjector(cfg MongoSessionInjectorConfig) http.Handler {
-	return &MongoSessionInjector{
+// NewSessionHandler returns a new MongoSessionInjector which implements http.HandlerFunc
+func NewSessionHandler(cfg SessionHandlerConfig) http.Handler {
+	return &SessionHandler{
 		database:      cfg.Database,
 		parentSession: cfg.Sess,
 		timeout:       cfg.Timeout,
@@ -62,7 +62,7 @@ type sessionGetter func() *mgo.Session
 
 // ServeHTTP injects a "getter" to the HTTP request context that allows any wrapped hTTP handler
 // to retrieve a new database connection
-func (c *MongoSessionInjector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Instantiate the nil session and timer objects that may be lazily instantiated if
 	// the request handler asks for a session.
 	var newSession *mgo.Session

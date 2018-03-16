@@ -1,4 +1,4 @@
-package mgosessionpool
+package mgohttp
 
 import (
 	"bytes"

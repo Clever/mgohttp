@@ -1,4 +1,4 @@
-package mgosessionpool
+package mgohttp
 
 import (
 	"net/http"
@@ -14,7 +14,7 @@ import (
 
 const (
 	testMongoURL      = "127.0.0.1:27017"
-	testDBName        = "mgosessionpool-test"
+	testDBName        = "mgohttp-test"
 	handlerTimeout    = 50 * time.Millisecond
 	testingStatusCode = http.StatusTeapot
 )
@@ -135,7 +135,7 @@ func TestMongoSessionInjector(t *testing.T) {
 
 	for _, spec := range testCases {
 		t.Run(spec.desc, func(t *testing.T) {
-			injector := NewMongoSessionInjector(MongoSessionInjectorConfig{
+			injector := NewSessionHandler(SessionHandlerConfig{
 				Sess:     session,
 				Database: testDBName,
 				Timeout:  handlerTimeout,
@@ -143,7 +143,7 @@ func TestMongoSessionInjector(t *testing.T) {
 			})
 			// Override the error status code for testing. This allows us to differentiate
 			// between our error status code and the 503 from http.TimeoutHandler.
-			injector.(*MongoSessionInjector).errorCode = testingStatusCode
+			injector.(*SessionHandler).errorCode = testingStatusCode
 
 			testServer := httptest.NewServer(injector)
 			defer testServer.Close()
