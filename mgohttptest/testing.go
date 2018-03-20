@@ -51,3 +51,40 @@ func WithSessions(cfgs []Config, Do func(context.Context)) {
 		c.Close()
 	}
 }
+
+// DbHandler manages our interaction with the testing Context.
+type DbHandler interface {
+	context.Context
+	Close()
+}
+
+type testHandler struct {
+	context.Context
+	sessions []*mgo.Session
+}
+
+func (t testHandler) Close() {
+	for _, s := range t.sessions {
+		s.Close()
+	}
+}
+
+// MakeContext creates a new Context that contains mgohttp database connections.
+func MakeContext(ctx context.Context, cfgs []Config) context.Context {
+	// We track all sessions created so that we can close them
+	sessions := []*mgo.Session{}
+
+	for _, c := range cfgs {
+		newSess := c.Sess.Copy()
+		sessions = append(sessions, newSess)
+		var getSession internal.SessionGetter = func() *mgo.Session {
+			return newSess
+		}
+		ctx = context.WithValue(ctx, internal.GetMgoSessionKey(c.Name), getSession)
+	}
+
+	return testHandler{
+		Context:  ctx,
+		sessions: sessions,
+	}
+}
