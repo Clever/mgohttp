@@ -101,8 +101,8 @@ func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		// amend the request context with the database connection then serve the wrapped
 		// HTTP handler
-		amendedReq := r.WithContext(context.WithValue(r.Context(), internal.GetMgoSessionKey(c.database), getSession))
-		c.handler.ServeHTTP(tw, amendedReq)
+		newCtx := internal.NewContext(r.Context(), c.database, getSession)
+		c.handler.ServeHTTP(tw, r.WithContext(newCtx))
 		close(done)
 	}()
 
@@ -134,8 +134,8 @@ type LimitedSession interface {
 	Ping() error
 }
 
-// SessionFromContext retrieves a *mgo.Session from the request context.
-func SessionFromContext(ctx context.Context, database string) LimitedSession {
+// FromContext retrieves a *mgo.Session from the request context.
+func FromContext(ctx context.Context, database string) LimitedSession {
 	getSessionBlob := ctx.Value(internal.GetMgoSessionKey(database))
 	if getSession, ok := getSessionBlob.(internal.SessionGetter); ok {
 		return getSession()
