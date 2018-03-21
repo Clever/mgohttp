@@ -7,19 +7,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Clever/mgohttp/internal"
 	"gopkg.in/Clever/kayvee-go.v6/logger"
 	mgo "gopkg.in/mgo.v2"
 )
-
-type mgoSessionKeyType struct {
-	database string
-}
-
-var mgoSessionKey = mgoSessionKeyType{}
-
-func getMgoSessionKey(db string) mgoSessionKeyType {
-	return mgoSessionKeyType{database: db}
-}
 
 // SessionHandlerConfig dictates how we inject mongo sessions into the context
 // of the HTTP request.
@@ -56,10 +47,6 @@ func NewSessionHandler(cfg SessionHandlerConfig) http.Handler {
 	}
 }
 
-// sessionGetter is the function type definition used to enforce that we're populating the
-// Context value with the correct function type.
-type sessionGetter func() *mgo.Session
-
 // ServeHTTP injects a "getter" to the HTTP request context that allows any wrapped hTTP handler
 // to retrieve a new database connection
 func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +64,7 @@ func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// getSession is injected into the Context, repeated calls by the same request will return
 	// the same session.
-	var getSession sessionGetter = func() *mgo.Session {
+	var getSession internal.SessionGetter = func() *mgo.Session {
 		// we've already created a session for this request, shortcircuit and return that session.
 		if newSession != nil {
 			return newSession
@@ -104,8 +91,8 @@ func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		// amend the request context with the database connection then serve the wrapped
 		// HTTP handler
-		amendedReq := r.WithContext(context.WithValue(r.Context(), getMgoSessionKey(c.database), getSession))
-		c.handler.ServeHTTP(tw, amendedReq)
+		newCtx := internal.NewContext(r.Context(), c.database, getSession)
+		c.handler.ServeHTTP(tw, r.WithContext(newCtx))
 		close(done)
 	}()
 
@@ -137,10 +124,10 @@ type LimitedSession interface {
 	Ping() error
 }
 
-// SessionFromContext retrieves a *mgo.Session from the request context.
-func SessionFromContext(ctx context.Context, database string) LimitedSession {
-	getSessionBlob := ctx.Value(getMgoSessionKey(database))
-	if getSession, ok := getSessionBlob.(sessionGetter); ok {
+// FromContext retrieves a *mgo.Session from the request context.
+func FromContext(ctx context.Context, database string) LimitedSession {
+	getSessionBlob := ctx.Value(internal.GetMgoSessionKey(database))
+	if getSession, ok := getSessionBlob.(internal.SessionGetter); ok {
 		return getSession()
 	}
 

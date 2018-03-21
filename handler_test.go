@@ -32,13 +32,13 @@ func TestMongoSessionInjector(t *testing.T) {
 		{
 			desc: "simple ping twice",
 			handler: func(w http.ResponseWriter, r *http.Request) {
-				sess := SessionFromContext(r.Context(), testDBName)
+				sess := FromContext(r.Context(), testDBName)
 				if sess.Ping() != nil {
 					w.WriteHeader(http.StatusInternalServerError)
 					return
 				}
 
-				sess2 := SessionFromContext(r.Context(), testDBName)
+				sess2 := FromContext(r.Context(), testDBName)
 				if sess2.Ping() != nil {
 					w.WriteHeader(http.StatusInternalServerError)
 					return
@@ -54,7 +54,7 @@ func TestMongoSessionInjector(t *testing.T) {
 		{
 			desc: "endpoint timeout for single query",
 			handler: func(w http.ResponseWriter, r *http.Request) {
-				sess := SessionFromContext(r.Context(), testDBName)
+				sess := FromContext(r.Context(), testDBName)
 				// try to sleep for 10sec
 				err := sess.DB("test").Run(bson.M{"eval": "sleep(10000)"}, nil)
 				if err != nil {
@@ -75,7 +75,7 @@ func TestMongoSessionInjector(t *testing.T) {
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				// try to small query many times
 				for i := 0; i < 1000; i++ {
-					sess := SessionFromContext(r.Context(), testDBName)
+					sess := FromContext(r.Context(), testDBName)
 					err := sess.DB("test").Run(bson.M{"eval": "sleep(10)"}, nil)
 					if err != nil {
 						// NOTE: using 500 to differentiate from the injector's 503's
@@ -94,7 +94,7 @@ func TestMongoSessionInjector(t *testing.T) {
 		{
 			desc: "handler wrapped in http.TimeoutHandler",
 			handler: http.TimeoutHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				sess := SessionFromContext(r.Context(), testDBName)
+				sess := FromContext(r.Context(), testDBName)
 				// try to sleep for 10sec
 				err := sess.DB("test").Run(bson.M{"eval": "sleep(10000)"}, nil)
 				if err != nil {
@@ -114,7 +114,7 @@ func TestMongoSessionInjector(t *testing.T) {
 		{
 			desc: "a stricter http.TimeoutHandler will supercede us",
 			handler: http.TimeoutHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				sess := SessionFromContext(r.Context(), testDBName)
+				sess := FromContext(r.Context(), testDBName)
 				// try to sleep for 10sec
 				err := sess.DB("test").Run(bson.M{"eval": "sleep(10000)"}, nil)
 				if err != nil {
