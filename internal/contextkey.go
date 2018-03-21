@@ -1,5 +1,11 @@
 // Package internal exists so that we can share the Context key functions between
 // mgohttp & mgohttptest without making them public.
+//
+// The NewContext function is intentionally kept private to prevent accidental misuses
+// of the mgohttp package. The `NewSessionHandler` function is the only inteded interface.
+// Testing capabilities are available via the `mgohttptest` subpackage. It's kept seperate as
+// its use should be intentional and look out of place in non-test code, just like
+// the net/http/httptest package would look out of place.
 package internal
 
 import (

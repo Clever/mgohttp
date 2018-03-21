@@ -19,19 +19,21 @@ type DbHandler interface {
 	Close()
 }
 
-type testHandler struct {
+// testContext embeds a context and tracks open sessions so then can be cleared out on Close.
+type testContext struct {
 	context.Context
 	sessions []*mgo.Session
 }
 
-func (t testHandler) Close() {
+// Close calls Close on all tracked *mgo.Session's
+func (t testContext) Close() {
 	for _, s := range t.sessions {
 		s.Close()
 	}
 }
 
 // MakeContext creates a new Context that contains mgohttp database connections.
-func MakeContext(ctx context.Context, cfgs []Config) context.Context {
+func MakeContext(ctx context.Context, cfgs ...Config) DbHandler {
 	// We track all sessions created so that we can close them
 	sessions := []*mgo.Session{}
 
@@ -44,7 +46,7 @@ func MakeContext(ctx context.Context, cfgs []Config) context.Context {
 		ctx = internal.NewContext(ctx, c.Name, getSession)
 	}
 
-	return testHandler{
+	return testContext{
 		Context:  ctx,
 		sessions: sessions,
 	}

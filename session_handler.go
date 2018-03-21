@@ -12,16 +12,6 @@ import (
 	mgo "gopkg.in/mgo.v2"
 )
 
-type mgoSessionKeyType struct {
-	database string
-}
-
-var mgoSessionKey = mgoSessionKeyType{}
-
-func getMgoSessionKey(db string) mgoSessionKeyType {
-	return mgoSessionKeyType{database: db}
-}
-
 // SessionHandlerConfig dictates how we inject mongo sessions into the context
 // of the HTTP request.
 type SessionHandlerConfig struct {
