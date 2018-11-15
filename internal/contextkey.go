@@ -11,7 +11,7 @@ package internal
 import (
 	"context"
 
-	mgo "gopkg.in/mgo.v2"
+	mgo "github.com/globalsign/mgo"
 )
 
 type mgoSessionKeyType struct {

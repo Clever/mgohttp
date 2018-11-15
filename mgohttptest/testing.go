@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/Clever/mgohttp/internal"
-	mgo "gopkg.in/mgo.v2"
+	mgo "github.com/globalsign/mgo"
 )
 
 // Config describes a mongo database that will be injected to the context

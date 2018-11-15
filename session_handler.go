@@ -9,7 +9,7 @@ import (
 
 	"github.com/Clever/mgohttp/internal"
 	"gopkg.in/Clever/kayvee-go.v6/logger"
-	mgo "gopkg.in/mgo.v2"
+	mgo "github.com/globalsign/mgo"
 )
 
 // SessionHandlerConfig dictates how we inject mongo sessions into the context

@@ -3,5 +3,5 @@
   version = "^6.10.0"
 
 [[constraint]]
-  branch = "v2"
-  name = "gopkg.in/mgo.v2"
+  name = "github.com/globalsign/mgo"
+  branch = "master"
