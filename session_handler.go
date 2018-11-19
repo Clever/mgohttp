@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/Clever/mgohttp/internal"
-	"gopkg.in/Clever/kayvee-go.v6/logger"
 	mgo "github.com/globalsign/mgo"
+	"gopkg.in/Clever/kayvee-go.v6/logger"
 )
 
 // SessionHandlerConfig dictates how we inject mongo sessions into the context
