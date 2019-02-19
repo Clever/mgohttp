@@ -40,8 +40,8 @@ func MakeContext(ctx context.Context, cfgs ...Config) DbHandler {
 	for _, c := range cfgs {
 		newSess := c.Sess.Copy()
 		sessions = append(sessions, newSess)
-		var getSession internal.SessionGetter = func() *mgo.Session {
-			return newSess
+		var getSession internal.SessionGetter = func(ctx context.Context) (*mgo.Session, context.Context) {
+			return newSess, ctx
 		}
 		ctx = internal.NewContext(ctx, c.Name, getSession)
 	}

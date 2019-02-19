@@ -4,10 +4,14 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/Clever/mgohttp/internal"
+	opentracing "github.com/opentracing/opentracing-go"
+	tags "github.com/opentracing/opentracing-go/ext"
 	"gopkg.in/Clever/kayvee-go.v6/logger"
 	mgo "gopkg.in/mgo.v2"
 )
@@ -47,6 +51,34 @@ func NewSessionHandler(cfg SessionHandlerConfig) http.Handler {
 	}
 }
 
+// getCallerName is adapted from the runtime pkg examples for the Callers fn
+func getCallerName() string {
+	// Ask runtime.Callers for up to 10 pcs, including runtime.Callers itself.
+	pc := make([]uintptr, 10)
+	n := runtime.Callers(0, pc)
+	if n == 0 {
+		// No pcs available. Stop now.
+		// This can happen if the first argument to runtime.Callers is large.
+		return ""
+	}
+
+	pc = pc[:n] // pass only valid pcs to runtime.CallersFrames
+	frames := runtime.CallersFrames(pc)
+
+	// Loop to get frames.
+	// A fixed number of pcs can expand to an indefinite number of Frames.
+	for {
+		frame, more := frames.Next()
+		if strings.Contains(frame.Function, "mgohttp") || strings.Contains(frame.Function, "runtime") {
+			continue
+		} else if !more {
+			break
+		}
+		return frame.Function
+	}
+	return "mgohttp-default-fn"
+}
+
 // ServeHTTP injects a "getter" to the HTTP request context that allows any wrapped hTTP handler
 // to retrieve a new database connection
 func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -55,6 +87,21 @@ func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var newSession *mgo.Session
 	sessionMutex := sync.Mutex{}
 	sessionTimer := time.NewTimer(c.timeout)
+	var sp opentracing.Span
+
+	// At the end, if we instantiated a session (and inherently a tracing span), close/finish
+	// them to clean up.
+	defer func() {
+		sessionMutex.Lock()
+		defer sessionMutex.Unlock()
+
+		if newSession != nil {
+			newSession.Close()
+		}
+		if sp != nil {
+			sp.Finish()
+		}
+	}()
 
 	// Create a timeoutWriter to avoid races on the http.ResponseWriter.
 	tw := &timeoutWriter{
@@ -64,11 +111,13 @@ func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// getSession is injected into the Context, repeated calls by the same request will return
 	// the same session.
-	var getSession internal.SessionGetter = func() *mgo.Session {
+	var getSession internal.SessionGetter = func(ctx context.Context) (*mgo.Session, context.Context) {
 		// we've already created a session for this request, shortcircuit and return that session.
 		if newSession != nil {
-			return newSession
+			return newSession, ctx
 		}
+		sp, ctx = opentracing.StartSpanFromContext(ctx, getCallerName())
+		tags.SpanKind.Set(sp, tags.SpanKindRPCServerEnum)
 
 		sessionMutex.Lock()
 		defer sessionMutex.Unlock()
@@ -83,7 +132,7 @@ func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// SetSocketTimeout guarantees that no individual query to mongo can take longer than
 		// the RequestTimeoutDuration value.
 		newSession.SetSocketTimeout(c.timeout)
-		return newSession
+		return newSession, ctx
 	}
 
 	done := make(chan struct{}) // done signifies the end of the HTTP request when closed
@@ -108,10 +157,6 @@ func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		logger.FromContext(r.Context()).Error("mongo-session-killed")
 	}
 
-	// Finally, if the session exists (which can be true in both the success and timeout case),
-	// close the session.
-	sessionMutex.Lock()
-	defer sessionMutex.Unlock()
 	if newSession != nil {
 		newSession.Close()
 	}
@@ -125,10 +170,14 @@ type LimitedSession interface {
 }
 
 // FromContext retrieves a *mgo.Session from the request context.
-func FromContext(ctx context.Context, database string) LimitedSession {
+func FromContext(ctx context.Context, database string) MongoSession {
 	getSessionBlob := ctx.Value(internal.GetMgoSessionKey(database))
 	if getSession, ok := getSessionBlob.(internal.SessionGetter); ok {
-		return getSession()
+		sess, ctx := getSession(ctx)
+		return tracedMgoSession{
+			sess: sess,
+			ctx:  ctx,
+		}
 	}
 
 	panic(fmt.Sprintf("SessionFromContext must receive a valid database name: %s not found", database))
