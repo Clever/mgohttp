@@ -5,3 +5,7 @@
 [[constraint]]
   branch = "v2"
   name = "gopkg.in/mgo.v2"
+
+[[constraint]]
+  name = "github.com/opentracing/opentracing-go"
+  version = "1.0.0"
