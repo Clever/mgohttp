@@ -22,6 +22,7 @@ type MongoCollection interface {
 	Upsert(selector interface{}, update interface{}) (info *mgo.ChangeInfo, err error)
 	Find(query interface{}) MongoQuery
 	Remove(selector interface{}) error
+	RemoveAll(selector interface{}) (info *mgo.ChangeInfo, err error)
 }
 
 // MongoQuery wraps a subset of the Query interface to Mongo for tracing purposes

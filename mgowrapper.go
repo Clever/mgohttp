@@ -99,6 +99,15 @@ func (tc tracedMgoCollection) Remove(selector interface{}) error {
 	return logAndReturnErr(sp, tc.collection.Remove(selector))
 }
 
+func (tc tracedMgoCollection) RemoveAll(selector interface{}) (info *mgo.ChangeInfo, err error) {
+	sp, _ := opentracing.StartSpanFromContext(tc.ctx, "removeall")
+	sp.LogFields(queryToFields("selector", selector)...)
+	defer sp.Finish()
+
+	info, err = tc.collection.RemoveAll(selector)
+	return info, logAndReturnErr(sp, err)
+}
+
 type tracedMongoQuery struct {
 	q   *mgo.Query
 	ctx context.Context
