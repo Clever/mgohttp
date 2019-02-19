@@ -156,10 +156,6 @@ func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(c.errorCode)
 		logger.FromContext(r.Context()).Error("mongo-session-killed")
 	}
-
-	if newSession != nil {
-		newSession.Close()
-	}
 }
 
 // LimitedSession is the methods from an *mgo.Session that we give the consumer access to. We
