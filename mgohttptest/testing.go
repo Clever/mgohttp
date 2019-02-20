@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/Clever/mgohttp/internal"
+	opentracing "github.com/opentracing/opentracing-go"
 	mgo "gopkg.in/mgo.v2"
 )
 
@@ -41,7 +42,8 @@ func MakeContext(ctx context.Context, cfgs ...Config) DbHandler {
 		newSess := c.Sess.Copy()
 		sessions = append(sessions, newSess)
 		var getSession internal.SessionGetter = func(ctx context.Context) (*mgo.Session, context.Context) {
-			return newSess, ctx
+			// add a dummy spam for testing purposes so we don't have a null pointer exception
+			return newSess, opentracing.ContextWithSpan(ctx, opentracing.StartSpan("mgohttp-testing"))
 		}
 		ctx = internal.NewContext(ctx, c.Name, getSession)
 	}

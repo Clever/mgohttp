@@ -70,6 +70,13 @@ func (tc tracedMgoCollection) Update(selector interface{}, update interface{}) e
 	return logAndReturnErr(sp, tc.collection.Update(selector, update))
 }
 
+func (tc tracedMgoCollection) Insert(docs ...interface{}) (err error) {
+	sp, _ := opentracing.StartSpanFromContext(tc.ctx, "insert")
+	sp.LogFields(opentracinglog.Int("num-docs", len(docs)))
+	defer sp.Finish()
+
+	return logAndReturnErr(sp, tc.Insert(docs...))
+}
 func (tc tracedMgoCollection) Upsert(selector interface{}, update interface{}) (info *mgo.ChangeInfo, err error) {
 	sp, _ := opentracing.StartSpanFromContext(tc.ctx, "upsert")
 	sp.LogFields(queryToFields("selector", selector)...)

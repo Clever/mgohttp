@@ -20,6 +20,7 @@ type MongoDatabase interface {
 type MongoCollection interface {
 	Update(selector interface{}, update interface{}) error
 	Upsert(selector interface{}, update interface{}) (info *mgo.ChangeInfo, err error)
+	Insert(docs ...interface{}) error
 	Find(query interface{}) MongoQuery
 	Remove(selector interface{}) error
 	RemoveAll(selector interface{}) (info *mgo.ChangeInfo, err error)
