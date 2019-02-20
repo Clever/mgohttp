@@ -158,13 +158,6 @@ func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// LimitedSession is the methods from an *mgo.Session that we give the consumer access to. We
-// omit Close because that is the responsibility of the MongoSessionInjector
-type LimitedSession interface {
-	DB(string) *mgo.Database
-	Ping() error
-}
-
 // FromContext retrieves a *mgo.Session from the request context.
 func FromContext(ctx context.Context, database string) MongoSession {
 	getSessionBlob := ctx.Value(internal.GetMgoSessionKey(database))

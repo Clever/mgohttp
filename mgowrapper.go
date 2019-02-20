@@ -28,9 +28,7 @@ func (ts tracedMgoSession) Ping() error {
 	sp, _ := opentracing.StartSpanFromContext(ts.ctx, "ping")
 	defer sp.Finish()
 
-	err := ts.sess.Ping()
-	sp.LogFields(opentracinglog.Error(err))
-	return err
+	return logAndReturnErr(sp, ts.sess.Ping())
 }
 
 type tracedMgoDatabase struct {
