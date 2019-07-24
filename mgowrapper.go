@@ -69,6 +69,17 @@ func (tc tracedMgoCollection) Update(selector interface{}, update interface{}) e
 	return logAndReturnErr(sp, tc.collection.Update(selector, update))
 }
 
+func (tc tracedMgoCollection) UpdateAll(selector interface{}, update interface{}) (info *mgo.ChangeInfo, err error) {
+	sp, _ := opentracing.StartSpanFromContext(tc.ctx, "update-all")
+	sp.SetTag("collection", tc.collectionName)
+	sp.LogFields(queryToFields("selector", selector)...)
+	sp.LogFields(queryToFields("update", update)...)
+	defer sp.Finish()
+
+	info, err = tc.UpdateAll(selector, update)
+	return info, logAndReturnErr(sp, err)
+}
+
 func (tc tracedMgoCollection) Insert(docs ...interface{}) (err error) {
 	sp, _ := opentracing.StartSpanFromContext(tc.ctx, "insert")
 	sp.LogFields(opentracinglog.Int("num-docs", len(docs)))
@@ -139,6 +150,9 @@ func (q tracedMongoQuery) One(result interface{}) (err error) {
 	return logAndReturnErr(sp, q.q.One(result))
 }
 func (q tracedMongoQuery) Limit(n int) MongoQuery {
+	// NOTE: this function just modifies the query, we will rely on
+	// One/All to terminate the span.
+
 	sp := opentracing.SpanFromContext(q.ctx)
 	sp.LogFields(opentracinglog.Int("query-limit", n))
 	return tracedMongoQuery{
@@ -148,6 +162,9 @@ func (q tracedMongoQuery) Limit(n int) MongoQuery {
 }
 
 func (q tracedMongoQuery) Select(selector interface{}) MongoQuery {
+	// NOTE: this function just modifies the query, we will rely on
+	// One/All to terminate the span.
+
 	sp := opentracing.SpanFromContext(q.ctx)
 	sp.LogFields(queryToFields("select", selector)...)
 	return tracedMongoQuery{
@@ -157,6 +174,9 @@ func (q tracedMongoQuery) Select(selector interface{}) MongoQuery {
 }
 
 func (q tracedMongoQuery) Hint(indexKey ...string) MongoQuery {
+	// NOTE: this function just modifies the query, we will rely on
+	// One/All to terminate the span.
+
 	sp := opentracing.SpanFromContext(q.ctx)
 	for i, hint := range indexKey {
 		sp.LogFields(opentracinglog.String(fmt.Sprintf("hint.%d", i), hint))
@@ -169,6 +189,9 @@ func (q tracedMongoQuery) Hint(indexKey ...string) MongoQuery {
 }
 
 func (q tracedMongoQuery) Sort(fields ...string) MongoQuery {
+	// NOTE: this function just modifies the query, we will rely on
+	// One/All to terminate the span.
+
 	sp := opentracing.SpanFromContext(q.ctx)
 	sp.SetTag("sort", strings.Join(fields, "|"))
 	return tracedMongoQuery{

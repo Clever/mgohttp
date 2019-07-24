@@ -19,6 +19,7 @@ type MongoDatabase interface {
 // MongoCollection wraps a subset of the Collection interface to Mongo for tracing purposes
 type MongoCollection interface {
 	Update(selector interface{}, update interface{}) error
+	UpdateAll(selector interface{}, update interface{}) (info *mgo.ChangeInfo, err error)
 	Upsert(selector interface{}, update interface{}) (info *mgo.ChangeInfo, err error)
 	Insert(docs ...interface{}) error
 	Find(query interface{}) MongoQuery
