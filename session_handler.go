@@ -87,6 +87,11 @@ func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var newSession *mgo.Session
 	sessionMutex := sync.Mutex{}
 	sessionTimer := time.NewTimer(c.timeout)
+
+	ctx := r.Context()
+	libSpan, ctx := opentracing.StartSpanFromContext(ctx, "mgohttp")
+	tags.DBType.Set(libSpan, "mongodb")
+
 	var sp opentracing.Span
 
 	// At the end, if we instantiated a session (and inherently a tracing span), close/finish
@@ -97,9 +102,9 @@ func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		if newSession != nil {
 			newSession.Close()
-		}
-		if sp != nil {
+			// if we didn't open a session, we don't care about closing the spans
 			sp.Finish()
+			libSpan.Finish()
 		}
 	}()
 
@@ -114,13 +119,17 @@ func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var getSession internal.SessionGetter = func(ctx context.Context) (*mgo.Session, context.Context) {
 		// we've already created a session for this request, shortcircuit and return that session.
 		if newSession != nil {
+			// close the prior span & open a new one
+			sp.Finish()
+			sp, ctx = opentracing.StartSpanFromContext(ctx, getCallerName())
 			return newSession, ctx
 		}
+
 		sp, ctx = opentracing.StartSpanFromContext(ctx, getCallerName())
-		tags.SpanKind.Set(sp, tags.SpanKindRPCServerEnum)
 
 		sessionMutex.Lock()
 		defer sessionMutex.Unlock()
+
 		// Create a session copy. We prefer Copy over Clone because opening new sockets
 		// allows for greater throughput to the database.
 		// Sessions created using Clone queue all requests through the parent connection's
@@ -138,9 +147,10 @@ func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	done := make(chan struct{}) // done signifies the end of the HTTP request when closed
 
 	go func() {
+
 		// amend the request context with the database connection then serve the wrapped
 		// HTTP handler
-		newCtx := internal.NewContext(r.Context(), c.database, getSession)
+		newCtx := internal.NewContext(ctx, c.database, getSession)
 		c.handler.ServeHTTP(tw, r.WithContext(newCtx))
 		close(done)
 	}()

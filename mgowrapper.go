@@ -3,6 +3,7 @@ package mgohttp
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	opentracing "github.com/opentracing/opentracing-go"
 	opentracinglog "github.com/opentracing/opentracing-go/log"
@@ -17,10 +18,10 @@ type tracedMgoSession struct {
 
 func (ts tracedMgoSession) DB(name string) MongoDatabase {
 	sp := opentracing.SpanFromContext(ts.ctx)
-	sp.LogFields(opentracinglog.String("mgo-db-name", name))
+	sp.SetTag("db-name", name)
 	return tracedMgoDatabase{
 		db:  ts.sess.DB(name),
-		ctx: ts.ctx,
+		ctx: opentracing.ContextWithSpan(ts.ctx, sp),
 	}
 }
 
@@ -37,12 +38,10 @@ type tracedMgoDatabase struct {
 }
 
 func (t tracedMgoDatabase) C(collection string) MongoCollection {
-	sp := opentracing.SpanFromContext(t.ctx)
-	sp.LogFields(opentracinglog.String("mgo-collection-name", collection))
-
 	return tracedMgoCollection{
-		collection: t.db.C(collection),
-		ctx:        t.ctx,
+		collectionName: collection,
+		collection:     t.db.C(collection),
+		ctx:            t.ctx,
 	}
 }
 
@@ -55,12 +54,14 @@ func (t tracedMgoDatabase) Run(cmd interface{}, result interface{}) error {
 }
 
 type tracedMgoCollection struct {
-	collection *mgo.Collection
-	ctx        context.Context
+	collectionName string
+	collection     *mgo.Collection
+	ctx            context.Context
 }
 
 func (tc tracedMgoCollection) Update(selector interface{}, update interface{}) error {
 	sp, _ := opentracing.StartSpanFromContext(tc.ctx, "update")
+	sp.SetTag("collection", tc.collectionName)
 	sp.LogFields(queryToFields("selector", selector)...)
 	sp.LogFields(queryToFields("update", update)...)
 	defer sp.Finish()
@@ -87,6 +88,8 @@ func (tc tracedMgoCollection) Upsert(selector interface{}, update interface{}) (
 
 func (tc tracedMgoCollection) Find(selector interface{}) MongoQuery {
 	sp, ctx := opentracing.StartSpanFromContext(tc.ctx, "find")
+	sp.SetTag("collection", tc.collectionName)
+
 	// NOTE: Find just starts the trace, the finishing call on the MongoQuery must
 	// finish it.
 	sp.LogFields(queryToFields("selector", selector)...)
@@ -98,6 +101,7 @@ func (tc tracedMgoCollection) Find(selector interface{}) MongoQuery {
 
 func (tc tracedMgoCollection) Remove(selector interface{}) error {
 	sp, _ := opentracing.StartSpanFromContext(tc.ctx, "remove")
+	sp.SetTag("collection", tc.collectionName)
 	sp.LogFields(queryToFields("selector", selector)...)
 	defer sp.Finish()
 
@@ -106,6 +110,7 @@ func (tc tracedMgoCollection) Remove(selector interface{}) error {
 
 func (tc tracedMgoCollection) RemoveAll(selector interface{}) (info *mgo.ChangeInfo, err error) {
 	sp, _ := opentracing.StartSpanFromContext(tc.ctx, "removeall")
+	sp.SetTag("collection", tc.collectionName)
 	sp.LogFields(queryToFields("selector", selector)...)
 	defer sp.Finish()
 
@@ -121,14 +126,16 @@ type tracedMongoQuery struct {
 func (q tracedMongoQuery) All(result interface{}) error {
 	sp := opentracing.SpanFromContext(q.ctx)
 	defer sp.Finish()
-	sp.LogFields(opentracinglog.String("access-method", "All"))
+
+	sp.SetTag("access-method", "All")
 	return logAndReturnErr(sp, q.q.All(result))
 }
 
 func (q tracedMongoQuery) One(result interface{}) (err error) {
 	sp := opentracing.SpanFromContext(q.ctx)
 	defer sp.Finish()
-	sp.LogFields(opentracinglog.String("access-method", "One"))
+
+	sp.SetTag("access-method", "One")
 	return logAndReturnErr(sp, q.q.One(result))
 }
 func (q tracedMongoQuery) Limit(n int) MongoQuery {
@@ -136,7 +143,7 @@ func (q tracedMongoQuery) Limit(n int) MongoQuery {
 	sp.LogFields(opentracinglog.Int("query-limit", n))
 	return tracedMongoQuery{
 		q:   q.q.Limit(n),
-		ctx: q.ctx,
+		ctx: opentracing.ContextWithSpan(q.ctx, sp),
 	}
 }
 
@@ -145,7 +152,7 @@ func (q tracedMongoQuery) Select(selector interface{}) MongoQuery {
 	sp.LogFields(queryToFields("select", selector)...)
 	return tracedMongoQuery{
 		q:   q.q.Select(selector),
-		ctx: q.ctx,
+		ctx: opentracing.ContextWithSpan(q.ctx, sp),
 	}
 }
 
@@ -157,16 +164,16 @@ func (q tracedMongoQuery) Hint(indexKey ...string) MongoQuery {
 
 	return tracedMongoQuery{
 		q:   q.q.Hint(indexKey...),
-		ctx: q.ctx,
+		ctx: opentracing.ContextWithSpan(q.ctx, sp),
 	}
 }
 
 func (q tracedMongoQuery) Sort(fields ...string) MongoQuery {
 	sp := opentracing.SpanFromContext(q.ctx)
-	sp.LogFields(queryToFields("sort", fields)...)
+	sp.SetTag("sort", strings.Join(fields, "|"))
 	return tracedMongoQuery{
 		q:   q.q.Sort(fields...),
-		ctx: q.ctx,
+		ctx: opentracing.ContextWithSpan(q.ctx, sp),
 	}
 }
 
