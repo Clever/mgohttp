@@ -51,7 +51,8 @@ func NewSessionHandler(cfg SessionHandlerConfig) http.Handler {
 	}
 }
 
-// getCallerName is adapted from the runtime pkg examples for the Callers fn
+// getCallerName retrieves the name of the calling function.
+// rough source: https://golang.org/pkg/runtime/#example_Frames
 func getCallerName() string {
 	// Ask runtime.Callers for up to 10 pcs, including runtime.Callers itself.
 	pc := make([]uintptr, 10)
