@@ -59,6 +59,10 @@ type tracedMgoCollection struct {
 	ctx            context.Context
 }
 
+func (tc tracedMgoCollection) UpdateId(id bson.ObjectId, update interface{}) error {
+	return tc.Update(bson.M{"_id": id}, update)
+}
+
 func (tc tracedMgoCollection) Update(selector interface{}, update interface{}) error {
 	sp, _ := opentracing.StartSpanFromContext(tc.ctx, "update")
 	sp.SetTag("collection", tc.collectionName)
@@ -98,6 +102,10 @@ func (tc tracedMgoCollection) Upsert(selector interface{}, update interface{}) (
 	return info, logAndReturnErr(sp, err)
 }
 
+func (tc tracedMgoCollection) FindId(id bson.ObjectId) MongoQuery {
+	return tc.Find(bson.M{"_id": id})
+}
+
 func (tc tracedMgoCollection) Find(selector interface{}) MongoQuery {
 	sp, ctx := opentracing.StartSpanFromContext(tc.ctx, "find")
 	sp.SetTag("collection", tc.collectionName)
@@ -109,6 +117,10 @@ func (tc tracedMgoCollection) Find(selector interface{}) MongoQuery {
 		q:   tc.collection.Find(selector),
 		ctx: ctx,
 	}
+}
+
+func (tc tracedMgoCollection) RemoveId(id bson.ObjectId) error {
+	return tc.Remove(bson.M{"_id": id})
 }
 
 func (tc tracedMgoCollection) Remove(selector interface{}) error {
@@ -199,6 +211,61 @@ func (q tracedMongoQuery) Sort(fields ...string) MongoQuery {
 		q:   q.q.Sort(fields...),
 		ctx: opentracing.ContextWithSpan(q.ctx, sp),
 	}
+}
+
+func (q tracedMongoQuery) Apply(change mgo.Change, result interface{}) (info *mgo.ChangeInfo, err error) {
+	sp := opentracing.SpanFromContext(q.ctx)
+	defer sp.Finish()
+
+	sp.SetTag("access-method", "apply")
+	sp.LogFields(bsonToKeys("update", change.Update))
+	sp.LogFields(
+		opentracinglog.Bool("remove", change.Remove),
+		opentracinglog.Bool("return-new", change.ReturnNew),
+		opentracinglog.Bool("upsert", change.Upsert),
+	)
+
+	info, err = q.q.Apply(change, result)
+	return info, logAndReturnErr(sp, err)
+}
+
+func (q tracedMongoQuery) Iter() MongoIter {
+	_, ctx := opentracing.StartSpanFromContext(q.ctx, "iter")
+	return tracedMongoIter{
+		i:   q.q.Iter(),
+		ctx: ctx,
+	}
+}
+
+type tracedMongoIter struct {
+	i   *mgo.Iter
+	ctx context.Context
+}
+
+func (t tracedMongoIter) All(result interface{}) error {
+	sp, _ := opentracing.StartSpanFromContext(t.ctx, "iter-all")
+	defer sp.Finish()
+	return logAndReturnErr(sp, t.i.All(result))
+}
+
+func (t tracedMongoIter) Close() error {
+	sp := opentracing.SpanFromContext(t.ctx)
+	defer sp.Finish()
+	return logAndReturnErr(sp, t.i.Close())
+}
+
+func (t tracedMongoIter) Done() bool {
+	return t.i.Done()
+
+}
+func (t tracedMongoIter) Err() error {
+	return logAndReturnErr(opentracing.SpanFromContext(t.ctx), t.i.Close())
+}
+
+func (t tracedMongoIter) Next(result interface{}) bool {
+	sp, _ := opentracing.StartSpanFromContext(t.ctx, "iter-next")
+	defer sp.Finish()
+	return t.i.Next(result)
 }
 
 // logAndReturnErr is a tiny helper for adding the error to a log inline.
