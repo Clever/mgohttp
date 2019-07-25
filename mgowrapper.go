@@ -76,7 +76,7 @@ func (tc tracedMgoCollection) UpdateAll(selector interface{}, update interface{}
 	sp.LogFields(bsonToKeys("update", update))
 	defer sp.Finish()
 
-	info, err = tc.UpdateAll(selector, update)
+	info, err = tc.collection.UpdateAll(selector, update)
 	return info, logAndReturnErr(sp, err)
 }
 
@@ -85,15 +85,16 @@ func (tc tracedMgoCollection) Insert(docs ...interface{}) (err error) {
 	sp.LogFields(opentracinglog.Int("num-docs", len(docs)))
 	defer sp.Finish()
 
-	return logAndReturnErr(sp, tc.Insert(docs...))
+	return logAndReturnErr(sp, tc.collection.Insert(docs...))
 }
+
 func (tc tracedMgoCollection) Upsert(selector interface{}, update interface{}) (info *mgo.ChangeInfo, err error) {
 	sp, _ := opentracing.StartSpanFromContext(tc.ctx, "upsert")
 	sp.LogFields(bsonToKeys("selector", selector))
 	sp.LogFields(bsonToKeys("update", update))
 	defer sp.Finish()
 
-	info, err = tc.Upsert(selector, update)
+	info, err = tc.collection.Upsert(selector, update)
 	return info, logAndReturnErr(sp, err)
 }
 
@@ -218,7 +219,7 @@ func getKeys(prefix string, q bson.M) []string {
 	for k, v := range q {
 		switch val := v.(type) {
 		case bson.M:
-			fields = append(fields, getKeys(k, val)...)
+			fields = append(fields, getKeys(addPrefix(k), val)...)
 		default:
 			fields = append(fields, addPrefix(k))
 		}
