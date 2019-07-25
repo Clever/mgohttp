@@ -62,8 +62,8 @@ type tracedMgoCollection struct {
 func (tc tracedMgoCollection) Update(selector interface{}, update interface{}) error {
 	sp, _ := opentracing.StartSpanFromContext(tc.ctx, "update")
 	sp.SetTag("collection", tc.collectionName)
-	sp.LogFields(queryToFields("selector", selector)...)
-	sp.LogFields(queryToFields("update", update)...)
+	sp.LogFields(bsonToKeys("selector", selector))
+	sp.LogFields(bsonToKeys("update", update))
 	defer sp.Finish()
 
 	return logAndReturnErr(sp, tc.collection.Update(selector, update))
@@ -72,8 +72,8 @@ func (tc tracedMgoCollection) Update(selector interface{}, update interface{}) e
 func (tc tracedMgoCollection) UpdateAll(selector interface{}, update interface{}) (info *mgo.ChangeInfo, err error) {
 	sp, _ := opentracing.StartSpanFromContext(tc.ctx, "update-all")
 	sp.SetTag("collection", tc.collectionName)
-	sp.LogFields(queryToFields("selector", selector)...)
-	sp.LogFields(queryToFields("update", update)...)
+	sp.LogFields(bsonToKeys("selector", selector))
+	sp.LogFields(bsonToKeys("update", update))
 	defer sp.Finish()
 
 	info, err = tc.UpdateAll(selector, update)
@@ -89,8 +89,8 @@ func (tc tracedMgoCollection) Insert(docs ...interface{}) (err error) {
 }
 func (tc tracedMgoCollection) Upsert(selector interface{}, update interface{}) (info *mgo.ChangeInfo, err error) {
 	sp, _ := opentracing.StartSpanFromContext(tc.ctx, "upsert")
-	sp.LogFields(queryToFields("selector", selector)...)
-	sp.LogFields(queryToFields("update", update)...)
+	sp.LogFields(bsonToKeys("selector", selector))
+	sp.LogFields(bsonToKeys("update", update))
 	defer sp.Finish()
 
 	info, err = tc.Upsert(selector, update)
@@ -103,7 +103,7 @@ func (tc tracedMgoCollection) Find(selector interface{}) MongoQuery {
 
 	// NOTE: Find just starts the trace, the finishing call on the MongoQuery must
 	// finish it.
-	sp.LogFields(queryToFields("selector", selector)...)
+	sp.LogFields(bsonToKeys("selector", selector))
 	return tracedMongoQuery{
 		q:   tc.collection.Find(selector),
 		ctx: ctx,
@@ -113,7 +113,7 @@ func (tc tracedMgoCollection) Find(selector interface{}) MongoQuery {
 func (tc tracedMgoCollection) Remove(selector interface{}) error {
 	sp, _ := opentracing.StartSpanFromContext(tc.ctx, "remove")
 	sp.SetTag("collection", tc.collectionName)
-	sp.LogFields(queryToFields("selector", selector)...)
+	sp.LogFields(bsonToKeys("selector", selector))
 	defer sp.Finish()
 
 	return logAndReturnErr(sp, tc.collection.Remove(selector))
@@ -122,7 +122,7 @@ func (tc tracedMgoCollection) Remove(selector interface{}) error {
 func (tc tracedMgoCollection) RemoveAll(selector interface{}) (info *mgo.ChangeInfo, err error) {
 	sp, _ := opentracing.StartSpanFromContext(tc.ctx, "removeall")
 	sp.SetTag("collection", tc.collectionName)
-	sp.LogFields(queryToFields("selector", selector)...)
+	sp.LogFields(bsonToKeys("selector", selector))
 	defer sp.Finish()
 
 	info, err = tc.collection.RemoveAll(selector)
@@ -166,7 +166,7 @@ func (q tracedMongoQuery) Select(selector interface{}) MongoQuery {
 	// One/All to terminate the span.
 
 	sp := opentracing.SpanFromContext(q.ctx)
-	sp.LogFields(queryToFields("select", selector)...)
+	sp.LogFields(bsonToKeys("select", selector))
 	return tracedMongoQuery{
 		q:   q.q.Select(selector),
 		ctx: opentracing.ContextWithSpan(q.ctx, sp),
@@ -206,31 +206,33 @@ func logAndReturnErr(sp opentracing.Span, err error) error {
 	return err
 }
 
-// queryToFields transforms an arbitrary mgo arg into a set of log fields.
+func getKeys(prefix string, q bson.M) []string {
+	addPrefix := func(s string) string {
+		if prefix == "" {
+			return s
+		}
+		return prefix + "." + s
+	}
+
+	fields := []string{}
+	for k, v := range q {
+		switch val := v.(type) {
+		case bson.M:
+			fields = append(fields, getKeys(k, val)...)
+		default:
+			fields = append(fields, addPrefix(k))
+		}
+	}
+	return fields
+}
+
+// bsonToKeys transforms an arbitrary mgo arg into a set of log fields.
 // This is mostly geared towards bson.M, but the Sprintf fallback should handle arrays
 // sufficiently for tracing purposes.
-func queryToFields(prefix string, query interface{}) []opentracinglog.Field {
-	fields := []opentracinglog.Field{}
-	switch q := query.(type) {
-	case bson.M:
-		for k, v := range q {
-			k = fmt.Sprintf("%s.%s", prefix, k)
-
-			switch val := v.(type) {
-			case string:
-				fields = append(fields, opentracinglog.String(k, val))
-			case int:
-				fields = append(fields, opentracinglog.Int(k, val))
-			case bson.ObjectId:
-				fields = append(fields, opentracinglog.String(k, val.Hex()))
-			case bson.M:
-				fields = append(fields, opentracinglog.Object(k, val))
-			default:
-				fields = append(fields, opentracinglog.String(k, fmt.Sprintf("%#v", val)))
-			}
-		}
-		return fields
-	default:
-		return append(fields, opentracinglog.String(prefix, fmt.Sprintf("%#v", query)))
+func bsonToKeys(name string, query interface{}) opentracinglog.Field {
+	queryFields := []string{}
+	if q, ok := query.(bson.M); ok {
+		queryFields = getKeys("", q)
 	}
+	return opentracinglog.String(name, strings.Join(queryFields, "|"))
 }

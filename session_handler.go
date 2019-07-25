@@ -148,7 +148,6 @@ func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	done := make(chan struct{}) // done signifies the end of the HTTP request when closed
 
 	go func() {
-
 		// amend the request context with the database connection then serve the wrapped
 		// HTTP handler
 		newCtx := internal.NewContext(ctx, c.database, getSession)
