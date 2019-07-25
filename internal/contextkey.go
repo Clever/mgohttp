@@ -4,8 +4,8 @@
 // The NewContext function is intentionally kept private to prevent accidental misuses
 // of the mgohttp package. The `NewSessionHandler` function is the only inteded interface.
 // Testing capabilities are available via the `mgohttptest` subpackage. It's kept seperate as
-// its use should be intentional and look out of place in non-test code, just like
-// the net/http/httptest package would look out of place.
+// its use should be intentional and look out of place in non-test code, just like use of
+// the net/http/httptest package outside of tests would be wrong.
 package internal
 
 import (
@@ -27,7 +27,7 @@ func GetMgoSessionKey(db string) interface{} {
 
 // SessionGetter is the function type definition used to enforce that we're populating the
 // Context value with the correct function type.
-type SessionGetter func() *mgo.Session
+type SessionGetter func(context.Context) (*mgo.Session, context.Context)
 
 // NewContext creates a new context object containing a new mgo session getter.
 func NewContext(ctx context.Context, dbName string, getter SessionGetter) context.Context {

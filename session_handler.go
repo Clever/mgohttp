@@ -4,10 +4,14 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/Clever/mgohttp/internal"
+	opentracing "github.com/opentracing/opentracing-go"
+	tags "github.com/opentracing/opentracing-go/ext"
 	"gopkg.in/Clever/kayvee-go.v6/logger"
 	mgo "gopkg.in/mgo.v2"
 )
@@ -47,6 +51,35 @@ func NewSessionHandler(cfg SessionHandlerConfig) http.Handler {
 	}
 }
 
+// getCallerName retrieves the name of the calling function.
+// rough source: https://golang.org/pkg/runtime/#example_Frames
+func getCallerName() string {
+	// Ask runtime.Callers for up to 10 pcs, including runtime.Callers itself.
+	pc := make([]uintptr, 10)
+	n := runtime.Callers(0, pc)
+	if n == 0 {
+		// No pcs available. Stop now.
+		// This can happen if the first argument to runtime.Callers is large.
+		return ""
+	}
+
+	pc = pc[:n] // pass only valid pcs to runtime.CallersFrames
+	frames := runtime.CallersFrames(pc)
+
+	// Loop to get frames.
+	// A fixed number of pcs can expand to an indefinite number of Frames.
+	for {
+		frame, more := frames.Next()
+		if strings.Contains(frame.Function, "mgohttp") || strings.Contains(frame.Function, "runtime") {
+			continue
+		} else if !more {
+			break
+		}
+		return frame.Function
+	}
+	return "mgohttp-default-fn"
+}
+
 // ServeHTTP injects a "getter" to the HTTP request context that allows any wrapped hTTP handler
 // to retrieve a new database connection
 func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -56,6 +89,26 @@ func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	sessionMutex := sync.Mutex{}
 	sessionTimer := time.NewTimer(c.timeout)
 
+	ctx := r.Context()
+	libSpan, ctx := opentracing.StartSpanFromContext(ctx, "mgohttp")
+	tags.DBType.Set(libSpan, "mongodb")
+
+	var sp opentracing.Span
+
+	// At the end, if we instantiated a session (and inherently a tracing span), close/finish
+	// them to clean up.
+	defer func() {
+		sessionMutex.Lock()
+		defer sessionMutex.Unlock()
+
+		if newSession != nil {
+			newSession.Close()
+			// if we didn't open a session, we don't care about closing the spans
+			sp.Finish()
+			libSpan.Finish()
+		}
+	}()
+
 	// Create a timeoutWriter to avoid races on the http.ResponseWriter.
 	tw := &timeoutWriter{
 		w: w,
@@ -64,14 +117,20 @@ func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// getSession is injected into the Context, repeated calls by the same request will return
 	// the same session.
-	var getSession internal.SessionGetter = func() *mgo.Session {
+	var getSession internal.SessionGetter = func(ctx context.Context) (*mgo.Session, context.Context) {
 		// we've already created a session for this request, shortcircuit and return that session.
 		if newSession != nil {
-			return newSession
+			// close the prior span & open a new one
+			sp.Finish()
+			sp, ctx = opentracing.StartSpanFromContext(ctx, getCallerName())
+			return newSession, ctx
 		}
+
+		sp, ctx = opentracing.StartSpanFromContext(ctx, getCallerName())
 
 		sessionMutex.Lock()
 		defer sessionMutex.Unlock()
+
 		// Create a session copy. We prefer Copy over Clone because opening new sockets
 		// allows for greater throughput to the database.
 		// Sessions created using Clone queue all requests through the parent connection's
@@ -83,7 +142,7 @@ func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// SetSocketTimeout guarantees that no individual query to mongo can take longer than
 		// the RequestTimeoutDuration value.
 		newSession.SetSocketTimeout(c.timeout)
-		return newSession
+		return newSession, ctx
 	}
 
 	done := make(chan struct{}) // done signifies the end of the HTTP request when closed
@@ -91,7 +150,7 @@ func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		// amend the request context with the database connection then serve the wrapped
 		// HTTP handler
-		newCtx := internal.NewContext(r.Context(), c.database, getSession)
+		newCtx := internal.NewContext(ctx, c.database, getSession)
 		c.handler.ServeHTTP(tw, r.WithContext(newCtx))
 		close(done)
 	}()
@@ -107,28 +166,17 @@ func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(c.errorCode)
 		logger.FromContext(r.Context()).Error("mongo-session-killed")
 	}
-
-	// Finally, if the session exists (which can be true in both the success and timeout case),
-	// close the session.
-	sessionMutex.Lock()
-	defer sessionMutex.Unlock()
-	if newSession != nil {
-		newSession.Close()
-	}
-}
-
-// LimitedSession is the methods from an *mgo.Session that we give the consumer access to. We
-// omit Close because that is the responsibility of the MongoSessionInjector
-type LimitedSession interface {
-	DB(string) *mgo.Database
-	Ping() error
 }
 
 // FromContext retrieves a *mgo.Session from the request context.
-func FromContext(ctx context.Context, database string) LimitedSession {
+func FromContext(ctx context.Context, database string) MongoSession {
 	getSessionBlob := ctx.Value(internal.GetMgoSessionKey(database))
 	if getSession, ok := getSessionBlob.(internal.SessionGetter); ok {
-		return getSession()
+		sess, ctx := getSession(ctx)
+		return tracedMgoSession{
+			sess: sess,
+			ctx:  ctx,
+		}
 	}
 
 	panic(fmt.Sprintf("SessionFromContext must receive a valid database name: %s not found", database))

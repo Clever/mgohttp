@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/Clever/mgohttp/internal"
+	opentracing "github.com/opentracing/opentracing-go"
 	mgo "gopkg.in/mgo.v2"
 )
 
@@ -37,11 +38,13 @@ func MakeContext(ctx context.Context, cfgs ...Config) DbHandler {
 	// We track all sessions created so that we can close them
 	sessions := []*mgo.Session{}
 
+	_, ctx = opentracing.StartSpanFromContext(ctx, "test")
+
 	for _, c := range cfgs {
 		newSess := c.Sess.Copy()
 		sessions = append(sessions, newSess)
-		var getSession internal.SessionGetter = func() *mgo.Session {
-			return newSess
+		var getSession internal.SessionGetter = func(ctx context.Context) (*mgo.Session, context.Context) {
+			return newSess, ctx
 		}
 		ctx = internal.NewContext(ctx, c.Name, getSession)
 	}

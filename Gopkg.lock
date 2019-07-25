@@ -8,6 +8,16 @@
   version = "v1.1.0"
 
 [[projects]]
+  name = "github.com/opentracing/opentracing-go"
+  packages = [
+    ".",
+    "ext",
+    "log"
+  ]
+  revision = "659c90643e714681897ec2521c60567dd21da733"
+  version = "v1.1.0"
+
+[[projects]]
   name = "github.com/pmezard/go-difflib"
   packages = ["difflib"]
   revision = "792786c7400a136282c1664665ae0a8db921c6c2"
@@ -71,6 +81,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "f3c763f2786a7aba659ce26fe604357f47bf8b763b9fa072f56ab6aef141cf68"
+  inputs-digest = "39ed5a328036ff32099843ed0fb2ea30c6d87043caaa1e0b734863187f153cf2"
   solver-name = "gps-cdcl"
   solver-version = 1
