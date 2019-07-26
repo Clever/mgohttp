@@ -90,10 +90,8 @@ func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	sessionTimer := time.NewTimer(c.timeout)
 
 	ctx := r.Context()
-	libSpan, ctx := opentracing.StartSpanFromContext(ctx, "mgohttp")
-	tags.DBType.Set(libSpan, "mongodb")
 
-	var sp opentracing.Span
+	var libSpan, sp opentracing.Span
 
 	// At the end, if we instantiated a session (and inherently a tracing span), close/finish
 	// them to clean up.
@@ -125,6 +123,9 @@ func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			sp, ctx = opentracing.StartSpanFromContext(ctx, getCallerName())
 			return newSession, ctx
 		}
+
+		libSpan, ctx = opentracing.StartSpanFromContext(ctx, "mgohttp")
+		tags.DBType.Set(libSpan, "mongodb")
 
 		sp, ctx = opentracing.StartSpanFromContext(ctx, getCallerName())
 
