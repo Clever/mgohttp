@@ -35,6 +35,7 @@ type MongoCollection interface {
 type MongoQuery interface {
 	All(result interface{}) error
 	Apply(change mgo.Change, result interface{}) (info *mgo.ChangeInfo, err error)
+	Count() (n int, err error)
 	Hint(indexKey ...string) MongoQuery
 	Iter() MongoIter
 	Limit(n int) MongoQuery
