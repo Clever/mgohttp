@@ -162,6 +162,16 @@ func (q tracedMongoQuery) One(result interface{}) (err error) {
 	sp.SetTag("access-method", "One")
 	return logAndReturnErr(sp, q.q.One(result))
 }
+
+func (q tracedMongoQuery) Count() (int, error) {
+	sp := opentracing.SpanFromContext(q.ctx)
+	defer sp.Finish()
+
+	sp.SetTag("access-method", "Count")
+	n, err := q.q.Count()
+	return n, logAndReturnErr(sp, err)
+}
+
 func (q tracedMongoQuery) Limit(n int) MongoQuery {
 	// NOTE: this function just modifies the query, we will rely on
 	// One/All to terminate the span.
