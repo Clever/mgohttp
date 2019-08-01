@@ -269,7 +269,7 @@ func (t tracedMongoIter) Done() bool {
 
 }
 func (t tracedMongoIter) Err() error {
-	return logAndReturnErr(opentracing.SpanFromContext(t.ctx), t.i.Close())
+	return logAndReturnErr(opentracing.SpanFromContext(t.ctx), t.i.Err())
 }
 
 func (t tracedMongoIter) Next(result interface{}) bool {
