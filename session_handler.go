@@ -11,7 +11,7 @@ import (
 
 	"github.com/Clever/mgohttp/internal"
 	opentracing "github.com/opentracing/opentracing-go"
-	tags "github.com/opentracing/opentracing-go/ext"
+	ext "github.com/opentracing/opentracing-go/ext"
 	"gopkg.in/Clever/kayvee-go.v6/logger"
 	mgo "gopkg.in/mgo.v2"
 )
@@ -125,7 +125,11 @@ func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		libSpan, ctx = opentracing.StartSpanFromContext(ctx, "mgohttp")
-		tags.DBType.Set(libSpan, "mongodb")
+		// set the service as the database - this will convey that it is a dependency of the service
+		ext.PeerService.Set(libSpan, c.database)
+		ext.SpanKind.Set(libSpan, ext.SpanKindRPCClientEnum)
+		ext.Component.Set(libSpan, "mgohttp")
+		ext.DBType.Set(libSpan, "mongodb")
 
 		sp, ctx = opentracing.StartSpanFromContext(ctx, getCallerName())
 
