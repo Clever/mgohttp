@@ -153,6 +153,19 @@ func (c *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	done := make(chan struct{}) // done signifies the end of the HTTP request when closed
 
 	go func() {
+		defer func() {
+			// If the SessionHandler timeout is hit, we close the mgo session. But server handler
+			// code may continue executing (even if the server timeout is the same as the
+			// SessionHandler timeout). If another DB operation is attempted, mgo will panic with a
+			// "Session already closed" error. Let's catch these panics to prevent server crashes.
+			if err := recover(); err != nil {
+				if err != "Session already closed" {
+					panic(err)
+				}
+				logger.FromContext(r.Context()).Error("mgo-session-already-closed-panic-caught")
+			}
+		}()
+
 		// amend the request context with the database connection then serve the wrapped
 		// HTTP handler
 		newCtx := internal.NewContext(ctx, c.database, getSession)
