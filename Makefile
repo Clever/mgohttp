@@ -3,7 +3,7 @@ include golang.mk
 
 .PHONY: test $(PKGS)
 SHELL := /bin/bash
-PKGS = $(shell go list ./...)
+PKGS = $(shell go list ./... | grep -v /vendor)
 $(eval $(call golang-version-check,1.13))
 
 test: $(PKGS)
@@ -11,5 +11,5 @@ test: $(PKGS)
 $(PKGS): golang-test-all-deps
 	$(call golang-test-all,$@)
 
-install_deps: golang-dep-vendor-deps
-	$(call golang-dep-vendor)
+install_deps:
+	go mod vendor
