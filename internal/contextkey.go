@@ -20,7 +20,7 @@ type mgoSessionKeyType struct {
 
 var mgoSessionKey = mgoSessionKeyType{}
 
-//GetMgoSessionKey returns a new object for use as a Context object key.
+// GetMgoSessionKey returns a new object for use as a Context object key.
 func GetMgoSessionKey(db string) interface{} {
 	return mgoSessionKeyType{database: db}
 }
