@@ -1,6 +1,6 @@
 module github.com/Clever/mgohttp
 
-go 1.21
+go 1.24
 
 require (
 	github.com/opentracing/opentracing-go v1.1.0
