@@ -3,9 +3,9 @@ kind: Component
 metadata:
   name: mgohttp
   description: An HTTP handler wrapper which lazily creates new mgo connections and handles timeouts
-  owner: unknown
+  owner: eng-infra
 spec:
   type: unknown
   lifecycle: production
-  owner: unknown
+  owner: eng-infra
   system: Clever
